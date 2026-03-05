@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 enum ViewMode: String, CaseIterable {
     case raw = "Raw"
@@ -45,6 +46,7 @@ struct SlidingCapsulePicker: View {
 }
 
 struct ContentView: View {
+    @EnvironmentObject private var openFileController: OpenFileController
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var inputText = ""
     @State private var selectedTab: ViewMode = .raw
@@ -57,13 +59,18 @@ struct ContentView: View {
     @State private var detectionResult = DetectionResult(format: .plain, autoFixedJSON: nil)
     @State private var preFixText: String?
     @State private var isApplyingFix = false
+    @State private var hasNonWhitespaceContent = false
+    @State private var textRevision: Int = 0
+    @State private var externalTextToken: Int = 0
+    @State private var isLoadingFile = false
+    @State private var fileLoadError: String?
 
     private var detectedFormat: TextFormat {
         detectionResult.format
     }
 
     private var hasContent: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        hasNonWhitespaceContent
     }
 
     private var showTreeControls: Bool {
@@ -83,12 +90,21 @@ struct ContentView: View {
                 HStack(spacing: 12) {
                     Spacer()
 
+                    Button {
+                        openFileFromDisk()
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open File")
+
                     if hasContent {
                         if detectionResult.autoFixedJSON != nil {
                             Button {
                                 if let original = preFixText {
                                     isApplyingFix = false
                                     preFixText = nil
+                                    externalTextToken += 1
                                     inputText = original
                                     detectionResult = TextFormat.detect(original, autoFixJSON: false)
                                 }
@@ -165,9 +181,7 @@ struct ContentView: View {
                         diffHighlightedView
                             .transition(.opacity)
                     } else {
-                        TextEditor(text: $inputText)
-                            .font(.system(.body, design: .monospaced))
-                            .scrollContentBackground(.hidden)
+                        EditorTextView(text: $inputText, isEditable: true, useMonospaceFont: true, externalTextToken: externalTextToken)
                             .padding(8)
                             .transition(.opacity)
                     }
@@ -182,9 +196,7 @@ struct ContentView: View {
                             if preFixText != nil {
                                 diffHighlightedView
                             } else {
-                                TextEditor(text: $inputText)
-                                    .font(.system(.body, design: .monospaced))
-                                    .scrollContentBackground(.hidden)
+                                EditorTextView(text: $inputText, isEditable: true, useMonospaceFont: true, externalTextToken: externalTextToken)
                                     .padding(8)
                             }
                         }
@@ -214,23 +226,32 @@ struct ContentView: View {
                 .transition(.opacity)
             }
         }
-        .onChange(of: inputText) { oldValue, newValue in
-            treeExpansionDepth = 2; treeRevision = UUID()
+        .onChange(of: inputText) { _, newValue in
+            let previousHasContent = hasNonWhitespaceContent
+            let newHasContent = containsNonWhitespace(newValue)
+
+            textRevision += 1
+            hasNonWhitespaceContent = newHasContent
+            treeExpansionDepth = 2
+            treeRevision = UUID()
+
             if isApplyingFix {
                 isApplyingFix = false
                 return
             }
+
             preFixText = nil
             let result = TextFormat.detect(newValue, autoFixJSON: autoFixJSON)
             detectionResult = result
+
             if let fixed = result.autoFixedJSON {
                 preFixText = newValue
                 isApplyingFix = true
+                externalTextToken += 1
                 inputText = fixed
             }
-            if selectedTab == .raw
-                && oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+
+            if selectedTab == .raw && !previousHasContent && newHasContent {
                 selectedTab = .formatted
             }
         }
@@ -244,7 +265,71 @@ struct ContentView: View {
                 if let fixed = result.autoFixedJSON {
                     preFixText = inputText
                     isApplyingFix = true
+                    externalTextToken += 1
                     inputText = fixed
+                }
+            }
+        }
+        .onAppear {
+            hasNonWhitespaceContent = containsNonWhitespace(inputText)
+            consumePendingOpenFileRequest()
+        }
+        .onChange(of: openFileController.requestID) { _, _ in
+            consumePendingOpenFileRequest()
+        }
+        .alert("Couldn’t open file", isPresented: Binding(
+            get: { fileLoadError != nil },
+            set: { if !$0 { fileLoadError = nil } }
+        )) {
+            Button("OK", role: .cancel) { fileLoadError = nil }
+        } message: {
+            Text(fileLoadError ?? "Unknown error")
+        }
+        .overlay {
+            if isLoadingFile {
+                ProgressView("Loading file…")
+                    .padding(12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    private func containsNonWhitespace(_ text: String) -> Bool {
+        text.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+    }
+
+    private func consumePendingOpenFileRequest() {
+        guard openFileController.consumePendingRequest() else { return }
+        openFileFromDisk()
+    }
+
+    private func openFileFromDisk() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Open"
+
+        guard panel.runModal() == .OK, let fileURL = panel.url else {
+            return
+        }
+
+        isLoadingFile = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+                let loadedText = String(decoding: data, as: UTF8.self)
+                await MainActor.run {
+                    externalTextToken += 1
+                    inputText = loadedText
+                    isLoadingFile = false
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingFile = false
+                    fileLoadError = error.localizedDescription
                 }
             }
         }
@@ -333,7 +418,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var formattedView: some View {
-        if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !hasContent {
             ContentUnavailableView("No Content", systemImage: "doc.text", description: Text("Type or paste some text"))
         } else if detectedFormat == .json, let root = JSONNode.parse(detectionResult.autoFixedJSON ?? inputText) {
             JSONTreeView(root: root, defaultExpansionDepth: treeExpansionDepth).id(treeRevision)
@@ -343,6 +428,9 @@ struct ContentView: View {
             csvView
         } else if detectedFormat == .markdown {
             MarkdownView(text: inputText)
+        } else if detectedFormat == .plain {
+            EditorTextView(text: .constant(inputText), isEditable: false, useMonospaceFont: false, externalTextToken: textRevision)
+                .padding(8)
         } else {
             ScrollView {
                 Text(renderedText)
@@ -380,6 +468,85 @@ struct ContentView: View {
                 }
             }
             .padding()
+        }
+    }
+}
+
+struct EditorTextView: NSViewRepresentable {
+    @Binding var text: String
+    let isEditable: Bool
+    let useMonospaceFont: Bool
+    let externalTextToken: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.isEditable = isEditable
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.usesFindBar = true
+        textView.allowsUndo = isEditable
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.backgroundColor = .clear
+        textView.textColor = .labelColor
+        textView.font = useMonospaceFont ? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular) : .systemFont(ofSize: NSFont.systemFontSize)
+        textView.string = text
+
+        textView.isHorizontallyResizable = true
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        textView.layoutManager?.backgroundLayoutEnabled = true
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
+        }
+
+        let font = useMonospaceFont ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular) : NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        if textView.font != font {
+            textView.font = font
+        }
+
+        if context.coordinator.lastAppliedExternalTextToken != externalTextToken {
+            textView.string = text
+            context.coordinator.lastAppliedExternalTextToken = externalTextToken
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        private let parent: EditorTextView
+        var lastAppliedExternalTextToken: Int
+
+        init(_ parent: EditorTextView) {
+            self.parent = parent
+            self.lastAppliedExternalTextToken = parent.externalTextToken
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
         }
     }
 }
