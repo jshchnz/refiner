@@ -64,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var eventHandlerInstalled = false
     private var isHidingPanel = false
+    private var isPresentingModalPanel = false
     private var statusItem: NSStatusItem?
     private let openFileController = OpenFileController()
 
@@ -98,7 +99,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Wire up resignKey callback
         panel?.onResignKey = { [weak self] in
-            self?.hidePanel()
+            guard let self else { return }
+            guard !self.isPresentingModalPanel else { return }
+            self.hidePanel()
         }
 
         // Register global hotkey: Cmd+Opt+R
@@ -187,7 +190,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if panel?.isVisible != true {
             showPanel()
         }
+        isPresentingModalPanel = true
         openFileController.requestOpenFile()
+    }
+
+    func setPresentingModalPanel(_ isPresenting: Bool) {
+        isPresentingModalPanel = isPresenting
     }
 
     @objc func openSettings() {

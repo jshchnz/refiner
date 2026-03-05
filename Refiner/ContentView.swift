@@ -305,12 +305,17 @@ struct ContentView: View {
     }
 
     private func openFileFromDisk() {
+        let appDelegate = NSApp.delegate as? AppDelegate
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.prompt = "Open"
+
+        defer {
+            appDelegate?.setPresentingModalPanel(false)
+        }
 
         guard panel.runModal() == .OK, let fileURL = panel.url else {
             return
@@ -553,4 +558,5 @@ struct EditorTextView: NSViewRepresentable {
 
 #Preview {
     ContentView()
+        .environmentObject(OpenFileController())
 }
