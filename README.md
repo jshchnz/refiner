@@ -10,7 +10,7 @@ _Or in other words, an app for data refinement._
 
 ## Why Refiner?
 
-You deal with messy text constantly — minified JSON from an API response, raw XML payloads, CSVs from a database export, Markdown you want to make quick edits to. Instead of hunting for an online formatter, pasting into some random website, or writing a quick script, just hit a hotkey. Refiner detects the format automatically and shows you a clean, syntax-highlighted, interactive view instantly.
+You deal with messy text constantly: minified JSON from an API response, raw XML payloads, CSVs from a database export, Markdown you want to make quick edits to. Instead of hunting for an online formatter, pasting into some random website, or writing a quick script, just hit a hotkey. Refiner detects the format automatically and shows you a clean, syntax-highlighted, interactive view instantly.
 
 The long-term goal is to prettify **any** text format. Contributions for new format renderers are very welcome.
 
