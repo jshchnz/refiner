@@ -201,7 +201,7 @@ struct ContentView: View {
             // Hidden buttons for keyboard shortcuts
             hiddenShortcuts
         }
-        .background(.ultraThinMaterial)
+        .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
             if !hasCompletedOnboarding {

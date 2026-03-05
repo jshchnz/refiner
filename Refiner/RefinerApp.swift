@@ -64,7 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.titleVisibility = .hidden
         panel?.level = .floating
         panel?.isMovableByWindowBackground = true
-        panel?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel?.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
         panel?.animationBehavior = .utilityWindow
         panel?.isOpaque = false
         panel?.backgroundColor = .clear
@@ -167,6 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered, defer: false
         )
         window.title = "Settings"
+        window.level = .floating
         window.center()
         window.contentView = NSHostingView(rootView: SettingsView(onShortcutChanged: { [weak self] in
             self?.registerHotKey()
@@ -245,11 +246,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.panel?.animator().alphaValue = 1
         }
         NSApp.activate(ignoringOtherApps: true)
+        // Restore first responder to the content view so TextEditor receives keystrokes
+        if let contentView = panel?.contentView {
+            panel?.makeFirstResponder(contentView)
+        }
     }
 
     func hidePanel() {
         guard !isHidingPanel else { return }
         isHidingPanel = true
+        // Save panel frame (position + size) before hiding
+        panel?.saveFrame(usingName: "RefinerPanel")
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.15
             self.panel?.animator().alphaValue = 0
@@ -262,17 +269,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Positioning
 
     private func centerOnActiveScreen() {
+        // Restore saved frame if available
+        if panel?.setFrameUsingName("RefinerPanel") == true {
+            return
+        }
+
+        // First launch: center with default size
         let mouseLocation = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens[0]
         let screenFrame = screen.visibleFrame
-
         let panelWidth: CGFloat = 800
         let panelHeight: CGFloat = 500
-
         let x = screenFrame.origin.x + (screenFrame.width - panelWidth) / 2
-        // Position ~30% from top of screen (Spotlight-style)
         let y = screenFrame.origin.y + screenFrame.height * 0.7 - panelHeight / 2
-
         panel?.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
     }
 }
