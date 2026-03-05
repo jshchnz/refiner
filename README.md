@@ -1,6 +1,6 @@
 # Refiner
 
-** A macOS menu bar app that auto-detects and renders JSON, XML, CSV, Markdown, code, and more.
+** A macOS app that auto-detects and renders JSON, XML, CSV, Markdown, code, and more.
 
 _Or in other words, an app for data refinement._
 
