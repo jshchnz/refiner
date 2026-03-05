@@ -5,6 +5,24 @@
 
 import SwiftUI
 import Carbon.HIToolbox
+import Foundation
+
+final class OpenFileController: ObservableObject {
+    @Published private(set) var requestID = 0
+
+    private var hasPendingRequest = false
+
+    func requestOpenFile() {
+        hasPendingRequest = true
+        requestID += 1
+    }
+
+    func consumePendingRequest() -> Bool {
+        guard hasPendingRequest else { return false }
+        hasPendingRequest = false
+        return true
+    }
+}
 
 // MARK: - Entry Point
 
@@ -46,7 +64,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var eventHandlerInstalled = false
     private var isHidingPanel = false
+    private var isPresentingModalPanel = false
     private var statusItem: NSStatusItem?
+    private let openFileController = OpenFileController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
@@ -74,12 +94,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.standardWindowButton(.zoomButton)?.isHidden = true
 
         // Host the SwiftUI ContentView
-        let hostingView = NSHostingView(rootView: ContentView())
+        let hostingView = NSHostingView(rootView: ContentView().environmentObject(openFileController))
         panel?.contentView = hostingView
 
         // Wire up resignKey callback
         panel?.onResignKey = { [weak self] in
-            self?.hidePanel()
+            guard let self else { return }
+            guard !self.isPresentingModalPanel else { return }
+            self.hidePanel()
         }
 
         // Register global hotkey: Cmd+Opt+R
@@ -112,6 +134,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Quit Refiner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        // File menu
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        let openItem = NSMenuItem(title: "Open…", action: #selector(openFile), keyEquivalent: "o")
+        openItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(openItem)
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
 
         // Edit menu — enables Cmd+V, Cmd+C, Cmd+X, Cmd+A
         let editMenuItem = NSMenuItem()
@@ -154,6 +185,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Settings
+
+    @objc private func openFile() {
+        if panel?.isVisible != true {
+            showPanel()
+        }
+        isPresentingModalPanel = true
+        openFileController.requestOpenFile()
+    }
+
+    func setPresentingModalPanel(_ isPresenting: Bool) {
+        isPresentingModalPanel = isPresenting
+    }
 
     @objc func openSettings() {
         if let existing = settingsWindow, existing.isVisible {
