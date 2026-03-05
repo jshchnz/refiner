@@ -1,6 +1,6 @@
 # Refiner
 
-**Instant formatting for whatever text is on your clipboard.** A macOS menu bar app that auto-detects and renders JSON, XML, CSV, Markdown, code, and more.
+** A macOS menu bar app that auto-detects and renders JSON, XML, CSV, Markdown, code, and more.
 
 _Or in other words, an app for data refinement._
 
