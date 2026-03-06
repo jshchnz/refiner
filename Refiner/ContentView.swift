@@ -57,6 +57,9 @@ struct ContentView: View {
     @State private var detectionResult = DetectionResult(format: .plain, autoFixedJSON: nil)
     @State private var preFixText: String?
     @State private var isApplyingFix = false
+    @AppStorage("jsonViewStyle") private var jsonViewStyle: JSONViewStyle = .tree
+
+    enum JSONViewStyle: String { case tree, flatTable }
 
     private var detectedFormat: TextFormat {
         detectionResult.format
@@ -103,21 +106,56 @@ struct ContentView: View {
                             .help("Revert to original text before auto-fix")
                         }
 
-                        HStack(spacing: 4) {
-                            Text(detectedFormat.rawValue)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            if detectionResult.autoFixedJSON != nil {
-                                Text("Auto-fixed")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                        if detectedFormat == .json {
+                            Menu {
+                                Button {
+                                    jsonViewStyle = .tree
+                                } label: {
+                                    if jsonViewStyle == .tree { Image(systemName: "checkmark") }
+                                    Text("Tree View")
+                                }
+                                Button {
+                                    jsonViewStyle = .flatTable
+                                } label: {
+                                    if jsonViewStyle == .flatTable { Image(systemName: "checkmark") }
+                                    Text("Table View")
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(jsonViewStyle == .tree ? "JSON Tree" : "JSON Table")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                    if detectionResult.autoFixedJSON != nil {
+                                        Text("Auto-fixed")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
                             }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .contentTransition(.interpolate)
+                        } else {
+                            HStack(spacing: 4) {
+                                Text(detectedFormat.rawValue)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                if detectionResult.autoFixedJSON != nil {
+                                    Text("Auto-fixed")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .contentTransition(.interpolate)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .contentTransition(.interpolate)
                     }
 
                     if (selectedTab == .formatted || selectedTab == .sideBySide) && hasContent {
@@ -131,11 +169,11 @@ struct ContentView: View {
                         .help("Copy Formatted Output")
                     }
 
-                    if showTreeControls {
+                    if showTreeControls && jsonViewStyle == .tree {
                         Button {
                             treeExpansionDepth = .max; treeRevision = UUID(); expandAllBounce += 1
                         } label: {
-                            Image(systemName: "chevron.down")
+                            Image(systemName: "arrow.down.left.and.arrow.up.right")
                                 .symbolEffect(.bounce, value: expandAllBounce)
                         }
                         .buttonStyle(.borderless)
@@ -144,12 +182,13 @@ struct ContentView: View {
                         Button {
                             treeExpansionDepth = 0; treeRevision = UUID(); collapseAllBounce += 1
                         } label: {
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "arrow.up.right.and.arrow.down.left")
                                 .symbolEffect(.bounce, value: collapseAllBounce)
                         }
                         .buttonStyle(.borderless)
                         .help("Collapse All")
                     }
+
                 }
             }
             .padding(.horizontal, 16)
@@ -336,7 +375,11 @@ struct ContentView: View {
         if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             ContentUnavailableView("No Content", systemImage: "doc.text", description: Text("Type or paste some text"))
         } else if detectedFormat == .json, let root = JSONNode.parse(detectionResult.autoFixedJSON ?? inputText) {
-            JSONTreeView(root: root, defaultExpansionDepth: treeExpansionDepth).id(treeRevision)
+            if jsonViewStyle == .flatTable {
+                JSONFlatTableView(root: root).id(treeRevision)
+            } else {
+                JSONTreeView(root: root, defaultExpansionDepth: treeExpansionDepth).id(treeRevision)
+            }
         } else if detectedFormat == .xml, let root = XMLTreeParser.parse(inputText) {
             XMLTreeView(root: root, defaultExpansionDepth: treeExpansionDepth).id(treeRevision)
         } else if detectedFormat == .csv {

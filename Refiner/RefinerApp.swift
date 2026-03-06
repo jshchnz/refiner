@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventHandlerInstalled = false
     private var isHidingPanel = false
     private var statusItem: NSStatusItem?
+    private var previousApp: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
@@ -245,6 +246,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ctx.duration = 0.15
             self.panel?.animator().alphaValue = 1
         }
+        // Save the previously active app so we can restore it when hiding
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if frontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = frontmost
+        }
         NSApp.activate(ignoringOtherApps: true)
         // Restore first responder to the content view so TextEditor receives keystrokes
         if let contentView = panel?.contentView {
@@ -262,6 +268,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.panel?.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             self?.panel?.orderOut(nil)
+            if let prev = self?.previousApp, prev.bundleIdentifier != Bundle.main.bundleIdentifier {
+                prev.activate()
+            }
+            self?.previousApp = nil
             self?.isHidingPanel = false
         })
     }

@@ -64,6 +64,32 @@ struct JSONNode: Identifiable {
         return fromAny(key: nil, value: obj)
     }
 
+    /// True if this node is an array containing at least one object child.
+    var isTabularArray: Bool {
+        guard case .array(let children) = kind else { return false }
+        return !children.isEmpty && children.contains {
+            if case .object = $0.kind { return true }
+            return false
+        }
+    }
+
+    /// Union of all keys across object children, in first-seen order.
+    var tableColumns: [String] {
+        guard case .array(let children) = kind else { return [] }
+        var seen = Set<String>()
+        var columns: [String] = []
+        for child in children {
+            guard case .object(let props) = child.kind else { continue }
+            for prop in props {
+                if let key = prop.key, !seen.contains(key) {
+                    seen.insert(key)
+                    columns.append(key)
+                }
+            }
+        }
+        return columns
+    }
+
     private static func fromAny(key: String?, value: Any) -> JSONNode {
         switch value {
         case let dict as [String: Any]:
